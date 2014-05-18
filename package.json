@@ -1,6 +1,7 @@
 {
   "title": "vector-map",
   "dependencies": {
+    "gl-matrix": "latest",
     "vector-tile": "git://github.com/mapzen/vector-tile-js.git#geojson"
   },
   "devDependencies": {

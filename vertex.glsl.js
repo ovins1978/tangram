@@ -4,11 +4,15 @@ GLRenderer.vertex_shader_source =
 "uniform vec2 map_center;\n" +
 "uniform float map_zoom;\n" +
 "uniform vec2 meter_zoom;\n" +
-"uniform vec2 tile_min;\n" +
-"uniform vec2 tile_max;\n" +
-"uniform float tile_scale; // geometries are scaled to this range within each tile\n" +
+"// uniform vec2 tile_min;\n" +
+"// uniform vec2 tile_max;\n" +
+"// uniform float tile_scale; // geometries are scaled to this range within each tile\n" +
 "uniform float num_layers;\n" +
 "uniform float time;\n" +
+"uniform mat4 model_view_mat;\n" +
+"uniform mat4 tile_view_mat;\n" +
+"uniform mat4 meter_view_mat;\n" +
+"uniform mat4 perspective_mat;\n" +
 "\n" +
 "attribute vec3 position;\n" +
 "attribute vec3 normal;\n" +
@@ -38,24 +42,26 @@ GLRenderer.vertex_shader_source =
 "// }\n" +
 "\n" +
 "void main() {\n" +
-"    vec3 vposition = position;\n" +
+"    vec4 vposition = vec4(position, 1.0);\n" +
 "    vec3 vnormal = normal;\n" +
 "\n" +
 "    // Calc position of vertex in meters, relative to center of screen\n" +
-"    vposition.y *= -1.0; // adjust for flipped y-coords\n" +
+"    // vposition.y *= -1.0; // adjust for flipped y-coords\n" +
 "    // vposition.y += tile_scale; // alternate, to also adjust for force-positive y coords in tile\n" +
-"    vposition.xy *= (tile_max - tile_min) / tile_scale; // adjust for vertex location within tile (scaled from local coords to meters)\n" +
+"    // vposition.xy *= (tile_max - tile_min) / tile_scale; // adjust for vertex location within tile (scaled from local coords to meters)\n" +
+"    vposition = model_view_mat * vposition;\n" +
 "\n" +
 "    // Vertex displacement tests\n" +
 "    // if (vposition.z > 1.0) {\n" +
-"    //     // vposition.x += sin(vposition.z + time) * 10.0 * sin(position.x); // swaying buildings\n" +
+"    //     // vposition.x += sin(vposition.z + time) * 10.0; // swaying buildings\n" +
 "    //     // vposition.y += cos(vposition.z + time) * 10.0;\n" +
 "\n" +
 "    //     // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings\n" +
 "    //     // vposition.z *= (sin(vposition.x / 100.0 + time) + 1.01); // wave\n" +
 "    // }\n" +
 "\n" +
-"    vposition.xy += tile_min.xy - map_center; // adjust for corner of tile relative to map center\n" +
+"    // vposition.xy += tile_min.xy - map_center; // adjust for corner of tile relative to map center\n" +
+"    vposition = tile_view_mat * vposition;\n" +
 "\n" +
 "    // Isometric-style projections\n" +
 "    // vposition.y += vposition.z; // z coordinate is a simple translation up along y axis, ala isometric\n" +
@@ -63,20 +69,22 @@ GLRenderer.vertex_shader_source =
 "    // vposition.x -= vposition.z * 0.5;\n" +
 "\n" +
 "    // Adjust for zoom in meters to get clip space coords\n" +
-"    vposition.xy /= meter_zoom;\n" +
+"    // vposition.xy /= meter_zoom;\n" +
+"    vposition = meter_view_mat * vposition;\n" +
 "\n" +
 "    // Flat shading between surface normal and light\n" +
 "    fcolor = color;\n" +
 "    // fcolor += vec3(sin(position.z + time), 0.0, 0.0); // color change on height + time\n" +
-"    light = vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location\n" +
-"    light = normalize(vec3(vposition.x, vposition.y, -vposition.z) - light); // light angle from light point to vertex\n" +
+"    light = vec3(-0.25, -0.25, 0.5); // vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location\n" +
+"    light = normalize(vec3(vposition.x, vposition.y, vposition.z) - light); // light angle from light point to vertex\n" +
 "    fcolor *= dot(vnormal, light * -1.0) + ambient + clamp(vposition.z * 2.0 / meter_zoom.x, 0.0, 0.25);\n" +
 "    fcolor = min(fcolor, 1.0);\n" +
 "\n" +
 "    // Perspective-style projections\n" +
-"    vec2 perspective_offset = vec2(-0.25, -0.25);\n" +
-"    vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);\n" +
-"    vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset) / meter_zoom.xy; // perspective from offset center screen\n" +
+"    // vec2 perspective_offset = vec2(-0.25, -0.25);\n" +
+"    // vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);\n" +
+"    // vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset);// / meter_zoom.xy; // perspective from offset center screen\n" +
+"    vposition = perspective_mat * vposition;\n" +
 "\n" +
 "    // Rotation test\n" +
 "    // float theta = 0;\n" +
@@ -92,12 +100,18 @@ GLRenderer.vertex_shader_source =
 "    // Reverse and scale to 0-1 for GL depth buffer\n" +
 "    // Layers are force-ordered (higher layers guaranteed to render on top of lower), then by height/depth\n" +
 "    float z_layer_scale = 4096.;\n" +
-"    float z_layer_range = (num_layers + 1.) * z_layer_scale;\n" +
-"    float z_layer = (layer + 1.) * z_layer_scale;\n" +
+"    // float z_layer_range = (num_layers + 1.) * z_layer_scale;\n" +
+"    // float z_layer = (layer + 1.) * z_layer_scale;\n" +
+"    float z_layer_range = (num_layers + 1.) + z_layer_scale;\n" +
+"    float z_layer = (layer + 1.) + z_layer_scale;\n" +
 "\n" +
-"    vposition.z = z_layer + clamp(vposition.z, 1., z_layer_scale);\n" +
-"    vposition.z = (z_layer_range - vposition.z) / z_layer_range;\n" +
+"    // vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);\n" +
+"    // vposition.z = (z_layer_range - vposition.z) / z_layer_range;\n" +
 "\n" +
-"    gl_Position = vec4(vposition, 1.0);\n" +
+"    vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);\n" +
+"    vposition.z /= z_layer_range;\n" +
+"    vposition.z *= -1.;\n" +
+"\n" +
+"    gl_Position = vposition;\n" +
 "}\n" +
 "";

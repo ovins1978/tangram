@@ -2,11 +2,15 @@ uniform vec2 resolution;
 uniform vec2 map_center;
 uniform float map_zoom;
 uniform vec2 meter_zoom;
-uniform vec2 tile_min;
-uniform vec2 tile_max;
-uniform float tile_scale; // geometries are scaled to this range within each tile
+// uniform vec2 tile_min;
+// uniform vec2 tile_max;
+// uniform float tile_scale; // geometries are scaled to this range within each tile
 uniform float num_layers;
 uniform float time;
+uniform mat4 model_view_mat;
+uniform mat4 tile_view_mat;
+uniform mat4 meter_view_mat;
+uniform mat4 perspective_mat;
 
 attribute vec3 position;
 attribute vec3 normal;
@@ -36,24 +40,26 @@ const float ambient = 0.45;
 // }
 
 void main() {
-    vec3 vposition = position;
+    vec4 vposition = vec4(position, 1.0);
     vec3 vnormal = normal;
 
     // Calc position of vertex in meters, relative to center of screen
-    vposition.y *= -1.0; // adjust for flipped y-coords
+    // vposition.y *= -1.0; // adjust for flipped y-coords
     // vposition.y += tile_scale; // alternate, to also adjust for force-positive y coords in tile
-    vposition.xy *= (tile_max - tile_min) / tile_scale; // adjust for vertex location within tile (scaled from local coords to meters)
+    // vposition.xy *= (tile_max - tile_min) / tile_scale; // adjust for vertex location within tile (scaled from local coords to meters)
+    vposition = model_view_mat * vposition;
 
     // Vertex displacement tests
     // if (vposition.z > 1.0) {
-    //     // vposition.x += sin(vposition.z + time) * 10.0 * sin(position.x); // swaying buildings
+    //     // vposition.x += sin(vposition.z + time) * 10.0; // swaying buildings
     //     // vposition.y += cos(vposition.z + time) * 10.0;
 
     //     // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings
     //     // vposition.z *= (sin(vposition.x / 100.0 + time) + 1.01); // wave
     // }
 
-    vposition.xy += tile_min.xy - map_center; // adjust for corner of tile relative to map center
+    // vposition.xy += tile_min.xy - map_center; // adjust for corner of tile relative to map center
+    vposition = tile_view_mat * vposition;
 
     // Isometric-style projections
     // vposition.y += vposition.z; // z coordinate is a simple translation up along y axis, ala isometric
@@ -61,20 +67,22 @@ void main() {
     // vposition.x -= vposition.z * 0.5;
 
     // Adjust for zoom in meters to get clip space coords
-    vposition.xy /= meter_zoom;
+    // vposition.xy /= meter_zoom;
+    vposition = meter_view_mat * vposition;
 
     // Flat shading between surface normal and light
     fcolor = color;
     // fcolor += vec3(sin(position.z + time), 0.0, 0.0); // color change on height + time
-    light = vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location
-    light = normalize(vec3(vposition.x, vposition.y, -vposition.z) - light); // light angle from light point to vertex
+    light = vec3(-0.25, -0.25, 0.5); // vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location
+    light = normalize(vec3(vposition.x, vposition.y, vposition.z) - light); // light angle from light point to vertex
     fcolor *= dot(vnormal, light * -1.0) + ambient + clamp(vposition.z * 2.0 / meter_zoom.x, 0.0, 0.25);
     fcolor = min(fcolor, 1.0);
 
     // Perspective-style projections
-    vec2 perspective_offset = vec2(-0.25, -0.25);
-    vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);
-    vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset) / meter_zoom.xy; // perspective from offset center screen
+    // vec2 perspective_offset = vec2(-0.25, -0.25);
+    // vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);
+    // vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset);// / meter_zoom.xy; // perspective from offset center screen
+    vposition = perspective_mat * vposition;
 
     // Rotation test
     // float theta = 0;
@@ -90,11 +98,17 @@ void main() {
     // Reverse and scale to 0-1 for GL depth buffer
     // Layers are force-ordered (higher layers guaranteed to render on top of lower), then by height/depth
     float z_layer_scale = 4096.;
-    float z_layer_range = (num_layers + 1.) * z_layer_scale;
-    float z_layer = (layer + 1.) * z_layer_scale;
+    // float z_layer_range = (num_layers + 1.) * z_layer_scale;
+    // float z_layer = (layer + 1.) * z_layer_scale;
+    float z_layer_range = (num_layers + 1.) + z_layer_scale;
+    float z_layer = (layer + 1.) + z_layer_scale;
 
-    vposition.z = z_layer + clamp(vposition.z, 1., z_layer_scale);
-    vposition.z = (z_layer_range - vposition.z) / z_layer_range;
+    // vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);
+    // vposition.z = (z_layer_range - vposition.z) / z_layer_range;
 
-    gl_Position = vec4(vposition, 1.0);
+    vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);
+    vposition.z /= z_layer_range;
+    vposition.z *= -1.;
+
+    gl_Position = vposition;
 }

@@ -297,7 +297,51 @@ GLRenderer.prototype._render = function GLRendererRender ()
     var meter_zoom = Point(this.css_size.width / 2 * meters_per_pixel, this.css_size.height / 2 * meters_per_pixel);
     gl.uniform2f(gl.getUniformLocation(this.program, 'meter_zoom'), meter_zoom.x, meter_zoom.y);
 
-    gl.uniform1f(gl.getUniformLocation(this.program, 'tile_scale'), VectorRenderer.tile_scale);
+    // gl.uniform1f(gl.getUniformLocation(this.program, 'tile_scale'), VectorRenderer.tile_scale);
+
+    var model_view_mat = mat4.create();
+    var tile_view_mat = mat4.create();
+    var meter_view_mat = mat4.create();
+    mat4.scale(meter_view_mat, meter_view_mat, vec3.fromValues(1 / meter_zoom.x, 1 / meter_zoom.y, 1 / meter_zoom.x)); // convert meters to viewport
+    gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'meter_view_mat'), gl.FALSE, meter_view_mat);
+
+    // Perspective-style projections
+    var perspective_mat = mat4.create();
+
+    // mat4.translate(perspective_mat, perspective_mat, vec3.fromValues(0.25, 0.25, 0));
+    mat4.translate(perspective_mat, perspective_mat, vec3.fromValues(0, 0, -1));
+    // mat4.scale(perspective_mat, perspective_mat, vec3.fromValues(20, 20, 1));
+    // mat4.translate(perspective_mat, perspective_mat, vec3.fromValues(-0.25, -0.25, 0));
+
+    var perspective_mat2 = mat4.create();
+
+    // mat4.translate(perspective_mat2, vec3.fromValues(-0.25, -0.25, 0), perspective_mat2);
+
+    var fov = 2; // .1, Math.PI / 2;
+    var aspect = 1; // this.css_size.width / this.css_size.height;
+    var znear = 10;
+    var zfar = -10;
+    perspective_mat2[0] = fov / aspect;                             // x row, x col
+    perspective_mat2[5] = fov;                                      // y row, y col
+    perspective_mat2[10] = (zfar + znear) / (znear - zfar);         // z row, z col
+    perspective_mat2[14] = (2 * zfar * znear) / (znear - zfar);     // z row, w col
+
+    perspective_mat2[11] = -1; // / meter_zoom.x;                   // w row, z col
+
+    // perspective_mat2[12] = -0.25;                                   // x row, w col
+    // perspective_mat2[13] = -0.25;                                   // y row, w col
+
+    // perspective_mat2[8] = 1 / meter_zoom.x; // x row, z col
+    // perspective_mat2[9] = 1 / meter_zoom.y; // y row, z col
+
+    // mat4.translate(perspective_mat2, perspective_mat2, vec3.fromValues(0.25, 0.25, 0));
+
+    mat4.multiply(perspective_mat, perspective_mat2, perspective_mat);
+
+    // mat4.scale(perspective_mat, perspective_mat, vec3.fromValues(1, 1, -1));
+    // mat4.translate(perspective_mat, perspective_mat2, vec3.fromValues(0.25 * 20, 0.25 * 20, 0));
+
+    gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'perspective_mat'), gl.FALSE, perspective_mat);
 
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -316,8 +360,25 @@ GLRenderer.prototype._render = function GLRendererRender ()
             Math.min(tile.coords.z, this.tile_source.max_zoom || tile.coords.z) == capped_zoom) {
 
             if (tile.gl_geometry != null) {
-                gl.uniform2f(gl.getUniformLocation(this.program, 'tile_min'), tile.min.x, tile.min.y);
-                gl.uniform2f(gl.getUniformLocation(this.program, 'tile_max'), tile.max.x, tile.max.y);
+                // Tile transform
+                // mat4.copy(model_view_mat, meter_view_mat); // convert meters to pixels
+                mat4.identity(model_view_mat)
+                // mat4.rotateZ(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 4);
+                // mat4.rotateY(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 6);
+                // mat4.rotateX(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 6);
+                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
+
+                mat4.scale(model_view_mat, model_view_mat, vec3.fromValues((tile.max.x - tile.min.x) / VectorRenderer.tile_scale, -1 * (tile.max.y - tile.min.y) / VectorRenderer.tile_scale, 1)); // scale tile local coords to meters
+
+                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(-2048, -2048, 0));
+                // mat4.rotateZ(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 4); // + (tile.coords.x + tile.coords.y));
+                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(2048, 2048, 0));
+
+                gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'model_view_mat'), gl.FALSE, model_view_mat);
+
+                mat4.identity(tile_view_mat);
+                mat4.translate(tile_view_mat, tile_view_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
+                gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'tile_view_mat'), gl.FALSE, tile_view_mat);
 
                 tile.gl_geometry.forEach(function (gl_geometry) {
                     gl_geometry.render();
