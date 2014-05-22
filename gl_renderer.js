@@ -297,10 +297,10 @@ GLRenderer.prototype._render = function GLRendererRender ()
     this.gl_program.uniform('2f', 'meter_zoom', meter_zoom.x, meter_zoom.y);
     this.gl_program.uniform('1f', 'tile_scale', VectorRenderer.tile_scale);
 
-    var compound_mat = mat4.create();
-    var model_mat = mat4.create(); // -> model matrix
-    var view_mat = mat4.create(); // -> view matrix
-    var meter_view_mat = mat4.create(); // -> view matrix
+    // var compound_mat = mat4.create();
+    var model_mat = mat4.create();
+    var view_mat = mat4.create();
+    var meter_view_mat = mat4.create();s
 
     mat4.scale(meter_view_mat, meter_view_mat, vec3.fromValues(1 / meter_zoom.x, 1 / meter_zoom.y, 1 / meter_zoom.x)); // convert meters to viewport
     // this.gl_program.uniform('Matrix4fv', 'meter_view_mat', gl.FALSE, meter_view_mat);

@@ -69,26 +69,26 @@ GLRenderer.vertex_shader_source =
 "\n" +
 "    vposition = model_mat * vposition;\n" +
 "\n" +
-"    // vposition = meter_view_mat * view_mat * model_mat * vposition;\n" +
-"    // vposition = compound_mat * vposition;\n" +
+"    // Vertex displacement + procedural effects\n" +
+"    #if defined(ANIMATION_ELEVATOR) || defined(ANIMATION_WAVE) || defined(EFFECT_NOISE_TEXTURE)\n" +
+"        vec3 vposition_world = vposition.xyz + vec3(anchor, 0.); // need vertex in world coords (before map center transform), hack to get around precision issues (see below)\n" +
 "\n" +
-"    #if defined(EFFECT_NOISE_TEXTURE)\n" +
-"        fposition = vec3(vposition);\n" +
-"        fposition.xy += anchor;\n" +
-"    #endif\n" +
-"\n" +
-"    // Vertex displacement tests\n" +
-"    if (vposition.z > 0.0) {\n" +
-"        // vposition.x += sin(vposition.z + time) * 10.0 * sin(position.x); // swaying buildings\n" +
-"        // vposition.y += cos(vposition.z + time) * 10.0;\n" +
-"\n" +
-"        #if defined(ANIMATION_ELEVATOR)\n" +
-"            // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings\n" +
-"            vposition.z *= max((sin(vposition.z + time) + 1.0) / 2.0, 0.05); // evelator buildings\n" +
-"        #elif defined(ANIMATION_WAVE)\n" +
-"            vposition.z *= max((sin((vposition.x + anchor.x) / 100.0 + time) + 1.0) / 2.0, 0.05); // wave\n" +
+"        #if defined(EFFECT_NOISE_TEXTURE)\n" +
+"            fposition = vposition_world;\n" +
 "        #endif\n" +
-"    }\n" +
+"\n" +
+"        if (vposition_world.z > 1.0) {\n" +
+"            // vposition.x += sin(vposition_world.z + time) * 10.0 * sin(position.x); // swaying buildings\n" +
+"            // vposition.y += cos(vposition_world.z + time) * 10.0;\n" +
+"\n" +
+"            #if defined(ANIMATION_ELEVATOR)\n" +
+"                // vposition.z *= (sin(vposition_world.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings\n" +
+"                vposition.z *= max((sin(vposition_world.z + time) + 1.0) / 2.0, 0.05); // evelator buildings\n" +
+"            #elif defined(ANIMATION_WAVE)\n" +
+"                vposition.z *= max((sin(vposition_world.x / 100.0 + time) + 1.0) / 2.0, 0.05); // wave\n" +
+"            #endif\n" +
+"        }\n" +
+"    #endif\n" +
 "\n" +
 "    vposition = view_mat * vposition;\n" +
 "    // vposition = meter_view_mat * vposition; // adjust for zoom in meters to get clip space coords\n" +

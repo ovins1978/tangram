@@ -67,26 +67,26 @@ void main() {
 
     vposition = model_mat * vposition;
 
-    // vposition = meter_view_mat * view_mat * model_mat * vposition;
-    // vposition = compound_mat * vposition;
+    // Vertex displacement + procedural effects
+    #if defined(ANIMATION_ELEVATOR) || defined(ANIMATION_WAVE) || defined(EFFECT_NOISE_TEXTURE)
+        vec3 vposition_world = vposition.xyz + vec3(anchor, 0.); // need vertex in world coords (before map center transform), hack to get around precision issues (see below)
 
-    #if defined(EFFECT_NOISE_TEXTURE)
-        fposition = vec3(vposition);
-        fposition.xy += anchor;
-    #endif
-
-    // Vertex displacement tests
-    if (vposition.z > 0.0) {
-        // vposition.x += sin(vposition.z + time) * 10.0 * sin(position.x); // swaying buildings
-        // vposition.y += cos(vposition.z + time) * 10.0;
-
-        #if defined(ANIMATION_ELEVATOR)
-            // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings
-            vposition.z *= max((sin(vposition.z + time) + 1.0) / 2.0, 0.05); // evelator buildings
-        #elif defined(ANIMATION_WAVE)
-            vposition.z *= max((sin((vposition.x + anchor.x) / 100.0 + time) + 1.0) / 2.0, 0.05); // wave
+        #if defined(EFFECT_NOISE_TEXTURE)
+            fposition = vposition_world;
         #endif
-    }
+
+        if (vposition_world.z > 1.0) {
+            // vposition.x += sin(vposition_world.z + time) * 10.0 * sin(position.x); // swaying buildings
+            // vposition.y += cos(vposition_world.z + time) * 10.0;
+
+            #if defined(ANIMATION_ELEVATOR)
+                // vposition.z *= (sin(vposition_world.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings
+                vposition.z *= max((sin(vposition_world.z + time) + 1.0) / 2.0, 0.05); // evelator buildings
+            #elif defined(ANIMATION_WAVE)
+                vposition.z *= max((sin(vposition_world.x / 100.0 + time) + 1.0) / 2.0, 0.05); // wave
+            #endif
+        }
+    #endif
 
     vposition = view_mat * vposition;
     // vposition = meter_view_mat * vposition; // adjust for zoom in meters to get clip space coords
