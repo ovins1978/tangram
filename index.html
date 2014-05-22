@@ -47,9 +47,12 @@ body {
 <div id="map"></div>
 
 <script src="lib/leaflet-0.8-dev.js"></script>
+<script src="lib/dat.gui.min.js"></script>
 <script src="dist/vector-map.debug.js"></script>
 
 <script>
+
+(function(){
 
 var tile_source = 'mapzen'; // default source, can be overriden by URL
 
@@ -57,6 +60,7 @@ var tile_sources = {
     'mapzen': {
         source: {
             type: 'GeoJSONTileSource',
+            // url: 'http://{s:[a,b,c,d]}.vector.test.mapzen.com/vector/all/{z}/{x}/{y}.json'
             url: 'http://vector.test.mapzen.com/vector/all/{z}/{x}/{y}.json'
         },
         layers: 'gl_layers_json.js',
@@ -66,6 +70,14 @@ var tile_sources = {
         source: {
             type: 'GeoJSONTileSource',
             url: 'http://vector.dev.mapzen.com/vector/all/{z}/{x}/{y}.json'
+        },
+        layers: 'gl_layers_json.js',
+        styles: 'gl_styles.js'
+    },
+    'mapzen-mvt-dev': {
+        source: {
+            type: 'MapboxTileSource',
+            url: 'http://vector.dev.mapzen.com/vector/all/{z}/{x}/{y}.mapbox'
         },
         layers: 'gl_layers_json.js',
         styles: 'gl_styles.js'
@@ -98,7 +110,7 @@ var tile_sources = {
     'mapbox': {
         source: {
             type: 'MapboxTileSource',
-            url: 'http://a.tiles.mapbox.com/v3/mapbox.mapbox-streets-v4/{z}/{x}/{y}.vector.pbf',
+            url: 'http://{s:[a,b,c,d]}.tiles.mapbox.com/v3/mapbox.mapbox-streets-v4/{z}/{x}/{y}.vector.pbf',
             max_zoom: 14
         },
         layers: 'gl_layers_mvt.js',
@@ -113,6 +125,7 @@ var locations = {
 };
 
 var osm_debug = false;
+
 
 /*** URL parsing ***/
 
@@ -174,11 +187,83 @@ var layer = L.vectorTileLayer({
     vectorTileSource: tile_sources[tile_source].source,
     vectorLayers: tile_sources[tile_source].layers,
     vectorStyles: tile_sources[tile_source].styles,
-    numWorkers: 1,
+    numWorkers: 2,
     attribution: 'Map data &copy; OpenStreetMap contributors | <a href="https://github.com/bcamper/vector-map">Source Code</a>',
     unloadInvisibleTiles: false,
     updateWhenIdle: false
 });
+
+// For easier debugging access
+window.layer = layer;
+window.renderer = layer._renderer;
+window.tiles = layer._renderer.tiles;
+
+/***** GUI/debug controls *****/
+
+var gl_controls = {
+    projection: {
+        projection: 'PROJECTION_PERSPECTIVE',
+        options: { 'None': '', 'Perspective': 'PROJECTION_PERSPECTIVE', 'Isometric': 'PROJECTION_ISOMETRIC', 'Pop-Up': 'PROJECTION_POPUP' }
+    },
+    lighting: {
+        lighting: 'LIGHTING_POINT',
+        options: { 'None': '', 'Point': 'LIGHTING_POINT', 'Directional': 'LIGHTING_DIRECTION' }
+    },
+    animation: {
+        animation: '',
+        options: { 'None': '', 'Elevator': 'ANIMATION_ELEVATOR', 'Wave': 'ANIMATION_WAVE', 'Noise texture': 'EFFECT_NOISE_TEXTURE' }
+    }
+};
+window.gl_controls = gl_controls;
+
+var gui = new dat.GUI({ autoPlace: true });
+gui.domElement.parentNode.style.zIndex = 5;
+// document.body.insertBefore(gui.domElement, document.body.firstChild);
+window.gui = gui;
+
+gl_controls.projection.control = gui.add(gl_controls.projection, 'projection', gl_controls.projection.options);
+gl_controls.projection.control.onChange(function(value) {
+    setGLProgramDefines(layer._renderer.gl_program, 'projection');
+});
+
+gl_controls.lighting.control = gui.add(gl_controls.lighting, 'lighting', gl_controls.lighting.options);
+gl_controls.lighting.control.onChange(function(value) {
+    setGLProgramDefines(layer._renderer.gl_program, 'lighting');
+});
+
+gl_controls.animation.control = gui.add(gl_controls.animation, 'animation', gl_controls.animation.options);
+gl_controls.animation.control.onChange(function(value) {
+    setGLProgramDefines(layer._renderer.gl_program, 'animation');
+    if (gl_controls.animation.animation != '') {
+        layer._renderer.continuous_animation = true;
+    }
+    else {
+        layer._renderer.continuous_animation = false
+    }
+});
+
+function setGLProgramDefines (program, set) {
+    var keys;
+    if (set) {
+        keys = [set];
+    }
+    else {
+        keys = Object.keys(gl_controls);
+    }
+
+    keys.forEach(function(key) {
+        setGLProgramDefinesForOptionSet(program, gl_controls[key][key], gl_controls[key].options);
+    });
+
+    program.compile();
+    layer._renderer.dirty = true;
+}
+
+function setGLProgramDefinesForOptionSet (program, current_value, options) {
+    for (var i in options) {
+        program.defines[options[i]] = ((options[i] == current_value) && options[i] != '');
+    }
+}
 
 
 /***** Render loop *****/
@@ -186,6 +271,7 @@ var layer = L.vectorTileLayer({
 var osm_layer; // global so it's accessible on console for debugging
 window.addEventListener('load', function () {
     layer.addTo(map);
+    setGLProgramDefines(layer._renderer.gl_program);
 
     if (osm_debug == true) {
         osm_layer =
@@ -224,6 +310,8 @@ function frameLoop () {
             );
         })();
     }
+}());
+
 }());
 
 </script>

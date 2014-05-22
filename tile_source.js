@@ -57,13 +57,25 @@ function NetworkTileSource (url_template, options)
 
     var options = options || {};
     this.response_type = ""; // use to set explicit XHR type
+
+    this.url_hosts = null;
+    var host_match = this.url_template.match(/{s:\[([^}+]+)\]}/);
+    if (host_match != null && host_match.length > 1) {
+        this.url_hosts = host_match[1].split(',');
+        this.next_host = 0;
+    }
 }
 
 NetworkTileSource.prototype.loadTile = function (tile, renderer, callback)
 {
     var tile_source = this;
-    var url = this.url_template.replace('{x}', tile.coords.x).replace('{y}', tile.coords.y).replace('{z}', tile.coords.z);
     var req = new XMLHttpRequest();
+    var url = this.url_template.replace('{x}', tile.coords.x).replace('{y}', tile.coords.y).replace('{z}', tile.coords.z);
+
+    if (this.url_hosts != null) {
+        url = url.replace(/{s:\[([^}+]+)\]}/, this.url_hosts[this.next_host]);
+        this.next_host = (this.next_host + 1) % this.url_hosts.length;
+    }
 
     tile.url = url;
     tile.xhr = req;
@@ -75,10 +87,14 @@ NetworkTileSource.prototype.loadTile = function (tile, renderer, callback)
             return;
         }
 
-        if (tile_source._loadTile) {
-            tile_source._loadTile(tile, renderer);
-        }
+        tile.debug.response_size = tile.xhr.response.length || tile.xhr.response.byteLength;
         tile.debug.network = +new Date() - tile.debug.network;
+
+        if (tile_source._loadTile) {
+            tile.debug.parsing = +new Date();
+            tile_source._loadTile(tile, renderer);
+            tile.debug.parsing = +new Date() - tile.debug.parsing;
+        }
 
         tile.xhr = null;
         tile.loading = false;

@@ -1,5 +1,15 @@
 // Generated from vertex.glsl, don't edit
 GLRenderer.vertex_shader_source = 
+"// #define PROJECTION_PERSPECTIVE\n" +
+"// #define PROJECTION_ISOMETRIC\n" +
+"// #define PROJECTION_POPUP\n" +
+"\n" +
+"// #define LIGHTING_POINT\n" +
+"// #define LIGHTING_DIRECTION\n" +
+"\n" +
+"// #define ANIMATION_ELEVATOR\n" +
+"// #define ANIMATION_WAVE\n" +
+"\n" +
 "uniform vec2 resolution;\n" +
 "uniform vec2 map_center;\n" +
 "uniform float map_zoom;\n" +
@@ -9,10 +19,14 @@ GLRenderer.vertex_shader_source =
 "// uniform float tile_scale; // geometries are scaled to this range within each tile\n" +
 "uniform float num_layers;\n" +
 "uniform float time;\n" +
-"uniform mat4 model_view_mat;\n" +
-"uniform mat4 tile_view_mat;\n" +
-"uniform mat4 meter_view_mat;\n" +
-"uniform mat4 perspective_mat;\n" +
+"\n" +
+"uniform mat4 model_mat;\n" +
+"uniform mat4 view_mat;\n" +
+"// uniform mat4 meter_view_mat;\n" +
+"// uniform mat4 perspective_mat;\n" +
+"// uniform mat4 compound_mat;\n" +
+"\n" +
+"uniform vec2 anchor;\n" +
 "\n" +
 "attribute vec3 position;\n" +
 "attribute vec3 normal;\n" +
@@ -21,7 +35,10 @@ GLRenderer.vertex_shader_source =
 "\n" +
 "varying vec3 fcolor;\n" +
 "\n" +
-"// const vec3 light = vec3(0.2, 0.7, -0.5); // vec3(0.1, 0.2, -0.4)\n" +
+"#if defined(EFFECT_NOISE_TEXTURE)\n" +
+"    varying vec3 fposition;\n" +
+"#endif\n" +
+"\n" +
 "vec3 light = normalize(vec3(0.2, 0.7, -0.5)); // vec3(0.1, 0.2, -0.4)\n" +
 "const float ambient = 0.45;\n" +
 "\n" +
@@ -49,42 +66,80 @@ GLRenderer.vertex_shader_source =
 "    // vposition.y *= -1.0; // adjust for flipped y-coords\n" +
 "    // vposition.y += tile_scale; // alternate, to also adjust for force-positive y coords in tile\n" +
 "    // vposition.xy *= (tile_max - tile_min) / tile_scale; // adjust for vertex location within tile (scaled from local coords to meters)\n" +
-"    vposition = model_view_mat * vposition;\n" +
+"\n" +
+"    vposition = model_mat * vposition;\n" +
+"\n" +
+"    // vposition = meter_view_mat * view_mat * model_mat * vposition;\n" +
+"    // vposition = compound_mat * vposition;\n" +
+"\n" +
+"    #if defined(EFFECT_NOISE_TEXTURE)\n" +
+"        fposition = vec3(vposition);\n" +
+"        fposition.xy += anchor;\n" +
+"    #endif\n" +
 "\n" +
 "    // Vertex displacement tests\n" +
-"    // if (vposition.z > 1.0) {\n" +
-"    //     // vposition.x += sin(vposition.z + time) * 10.0; // swaying buildings\n" +
-"    //     // vposition.y += cos(vposition.z + time) * 10.0;\n" +
+"    if (vposition.z > 0.0) {\n" +
+"        // vposition.x += sin(vposition.z + time) * 10.0 * sin(position.x); // swaying buildings\n" +
+"        // vposition.y += cos(vposition.z + time) * 10.0;\n" +
 "\n" +
-"    //     // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings\n" +
-"    //     // vposition.z *= (sin(vposition.x / 100.0 + time) + 1.01); // wave\n" +
-"    // }\n" +
+"        #if defined(ANIMATION_ELEVATOR)\n" +
+"            // vposition.z *= (sin(vposition.z / 25.0 * time) + 1.0) / 2.0 + 0.1; // evelator buildings\n" +
+"            vposition.z *= max((sin(vposition.z + time) + 1.0) / 2.0, 0.05); // evelator buildings\n" +
+"        #elif defined(ANIMATION_WAVE)\n" +
+"            vposition.z *= max((sin((vposition.x + anchor.x) / 100.0 + time) + 1.0) / 2.0, 0.05); // wave\n" +
+"        #endif\n" +
+"    }\n" +
 "\n" +
-"    // vposition.xy += tile_min.xy - map_center; // adjust for corner of tile relative to map center\n" +
-"    vposition = tile_view_mat * vposition;\n" +
+"    vposition = view_mat * vposition;\n" +
+"    // vposition = meter_view_mat * vposition; // adjust for zoom in meters to get clip space coords\n" +
+"    // vposition = meter_view_mat * view_mat * vposition;\n" +
 "\n" +
-"    // Isometric-style projections\n" +
-"    // vposition.y += vposition.z; // z coordinate is a simple translation up along y axis, ala isometric\n" +
-"    // vposition.y += vposition.z * 0.5; // closer to Ultima 7-style axonometric\n" +
-"    // vposition.x -= vposition.z * 0.5;\n" +
-"\n" +
-"    // Adjust for zoom in meters to get clip space coords\n" +
-"    // vposition.xy /= meter_zoom;\n" +
-"    vposition = meter_view_mat * vposition;\n" +
-"\n" +
-"    // Flat shading between surface normal and light\n" +
+"    // Shading\n" +
 "    fcolor = color;\n" +
 "    // fcolor += vec3(sin(position.z + time), 0.0, 0.0); // color change on height + time\n" +
-"    light = vec3(-0.25, -0.25, 0.5); // vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location\n" +
-"    light = normalize(vec3(vposition.x, vposition.y, vposition.z) - light); // light angle from light point to vertex\n" +
-"    fcolor *= dot(vnormal, light * -1.0) + ambient + clamp(vposition.z * 2.0 / meter_zoom.x, 0.0, 0.25);\n" +
-"    fcolor = min(fcolor, 1.0);\n" +
 "\n" +
-"    // Perspective-style projections\n" +
-"    // vec2 perspective_offset = vec2(-0.25, -0.25);\n" +
-"    // vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);\n" +
-"    // vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset);// / meter_zoom.xy; // perspective from offset center screen\n" +
-"    vposition = perspective_mat * vposition;\n" +
+"    #if defined(LIGHTING_POINT)\n" +
+"        // Gouraud shading\n" +
+"        light = vec3(-0.25, -0.25, 0.50); // vec3(0.1, 0.1, 0.35); // point light location\n" +
+"        light = normalize(vec3(vposition.x, vposition.y, -vposition.z) - light); // light angle from light point to vertex\n" +
+"        fcolor *= dot(vnormal, light * -1.0) + ambient + clamp(vposition.z * 2.0 / meter_zoom.x, 0.0, 0.25);\n" +
+"    #elif defined(LIGHTING_DIRECTION)\n" +
+"        // Flat shading\n" +
+"        light = normalize(vec3(0.2, 0.7, -0.5));\n" +
+"        // light = normalize(vec3(-1., 0.7, -.0));\n" +
+"        // light = normalize(vec3(-1., 0.7, -.75));\n" +
+"        // fcolor *= max(dot(vnormal, light * -1.0), 0.1) + ambient;\n" +
+"        fcolor *= dot(vnormal, light * -1.0) + ambient;\n" +
+"    #endif\n" +
+"\n" +
+"    #if defined(PROJECTION_PERSPECTIVE)\n" +
+"        // Perspective-style projection\n" +
+"        vec2 perspective_offset = vec2(-0.25, -0.25);\n" +
+"        vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);\n" +
+"        vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset); // perspective from offset center screen\n" +
+"    #elif defined(PROJECTION_ISOMETRIC) || defined(PROJECTION_POPUP)\n" +
+"        // Pop-up effect - 3d in center of viewport, fading to 2d at edges\n" +
+"        #if defined(PROJECTION_POPUP)\n" +
+"            if (vposition.z > 0.0) {\n" +
+"                // float cd = distance(vposition.xy * (resolution.xy / resolution.yy), vec2(0.0, 0.0));\n" +
+"                float cd = distance(vposition.xy * (resolution.xy / resolution.yy), vec2(0.0, 0.0));\n" +
+"                const float popup_fade_inner = 0.5;\n" +
+"                const float popup_fade_outer = 0.75;\n" +
+"                if (cd > popup_fade_inner) {\n" +
+"                    vposition.z *= 1.0 - smoothstep(popup_fade_inner, popup_fade_outer, cd);\n" +
+"                }\n" +
+"                const float zoom_boost_start = 15.0;\n" +
+"                const float zoom_boost_end = 17.0;\n" +
+"                const float zoom_boost_magnitude = 0.75;\n" +
+"                vposition.z *= 1.0 + (1.0 - smoothstep(zoom_boost_start, zoom_boost_end, map_zoom)) * zoom_boost_magnitude;\n" +
+"            }\n" +
+"        #endif\n" +
+"\n" +
+"        // Isometric-style projection\n" +
+"        vposition.y += vposition.z; // z coordinate is a simple translation up along y axis, ala isometric\n" +
+"        // vposition.y += vposition.z * 0.5; // closer to Ultima 7-style axonometric\n" +
+"        // vposition.x -= vposition.z * 0.5;\n" +
+"    #endif\n" +
 "\n" +
 "    // Rotation test\n" +
 "    // float theta = 0;\n" +
@@ -100,17 +155,11 @@ GLRenderer.vertex_shader_source =
 "    // Reverse and scale to 0-1 for GL depth buffer\n" +
 "    // Layers are force-ordered (higher layers guaranteed to render on top of lower), then by height/depth\n" +
 "    float z_layer_scale = 4096.;\n" +
-"    // float z_layer_range = (num_layers + 1.) * z_layer_scale;\n" +
-"    // float z_layer = (layer + 1.) * z_layer_scale;\n" +
 "    float z_layer_range = (num_layers + 1.) + z_layer_scale;\n" +
 "    float z_layer = (layer + 1.) + z_layer_scale;\n" +
 "\n" +
-"    // vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);\n" +
-"    // vposition.z = (z_layer_range - vposition.z) / z_layer_range;\n" +
-"\n" +
-"    vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);\n" +
-"    vposition.z /= z_layer_range;\n" +
-"    vposition.z *= -1.;\n" +
+"    vposition.z = z_layer + clamp(vposition.z * meter_zoom.x, 1., z_layer_scale);\n" +
+"    vposition.z = (z_layer_range - vposition.z) / z_layer_range;\n" +
 "\n" +
 "    gl_Position = vposition;\n" +
 "}\n" +

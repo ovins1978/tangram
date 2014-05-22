@@ -93,10 +93,15 @@ VectorRenderer.prototype.setBounds = function (sw, ne)
         ne: { lng: ne.lng, lat: ne.lat }
     };
 
-    this.bounds_mercator = {
+    var buffer = 200 * Geo.meters_per_pixel[~~this.zoom]; // pixels -> meters
+    this.buffered_meter_bounds = {
         sw: Geo.latLngToMeters(Point(this.bounds.sw.lng, this.bounds.sw.lat)),
         ne: Geo.latLngToMeters(Point(this.bounds.ne.lng, this.bounds.ne.lat))
     };
+    this.buffered_meter_bounds.sw.x -= buffer;
+    this.buffered_meter_bounds.sw.y -= buffer;
+    this.buffered_meter_bounds.ne.x += buffer;
+    this.buffered_meter_bounds.ne.y += buffer;
 
     // console.log("set renderer bounds to " + JSON.stringify(this.bounds));
 
@@ -110,7 +115,7 @@ VectorRenderer.prototype.setBounds = function (sw, ne)
 
 VectorRenderer.prototype.updateVisibilityForTile = function (tile)
 {
-    tile.visible = Geo.boxIntersect(tile.bounds, this.bounds_mercator);
+    tile.visible = Geo.boxIntersect(tile.bounds, this.buffered_meter_bounds);
     return tile.visible;
 };
 
@@ -151,6 +156,12 @@ VectorRenderer.prototype.loadTile = function (coords, div, callback)
         coords.display_z = z; // z without overzoom
         coords.z -= zgap;
         // console.log("adjusted for overzoom, tile " + original_tile + " -> " + [coords.x, coords.y, coords.z].join('/'));
+    }
+
+    // Start tracking new tile set if no other tiles already loading
+    if (this.tile_set_loading == null) {
+        this.tile_set_loading = +new Date();
+        console.log("tile set load START");
     }
 
     var key = [coords.x, coords.y, coords.z].join('/');
@@ -213,6 +224,10 @@ VectorRenderer.prototype.loadTile = function (coords, div, callback)
 // Called on main thread when a web worker completes processing for a single tile
 VectorRenderer.prototype.tileWorkerCompleted = function (event)
 {
+    if (event.data.type != 'loadTileCompleted') {
+        return;
+    }
+
     var tile = event.data.tile;
 
     // Removed this tile during load?
@@ -229,6 +244,23 @@ VectorRenderer.prototype.tileWorkerCompleted = function (event)
     }
 
     delete tile.layers; // delete the source data in the tile to save memory
+
+    // No more tiles actively loading?
+    if (this.tile_set_loading != null) {
+        var end_tile_set = true;
+        for (var t in this.tiles) {
+            if (this.tiles[t].loading == true) {
+                end_tile_set = false;
+                break;
+            }
+        }
+
+        if (end_tile_set == true) {
+            this.last_tile_set_load = (+new Date()) - this.tile_set_loading;
+            this.tile_set_loading = null;
+            console.log("tile set load FINISHED in: " + this.last_tile_set_load);
+        }
+    }
 
     this.dirty = true;
     this.printDebugForTile(tile);
@@ -292,7 +324,24 @@ VectorRenderer.processLayersForTile = function (layers, tile)
     var tile_layers = {};
     for (var t=0; t < layers.length; t++) {
         layers[t].number = t;
-        tile_layers[layers[t].name] = layers[t].data(tile.layers) || { type: 'FeatureCollection', features: [] };
+
+        if (layers[t] != null) {
+            // Just pass through data untouched if no data transform function defined
+            if (layers[t].data == null) {
+                tile_layers[layers[t].name] = tile.layers[layers[t].name];
+            }
+            // Pass through data but with different layer name in tile source data
+            else if (typeof layers[t].data == 'string') {
+                tile_layers[layers[t].name] = tile.layers[layers[t].data];
+            }
+            // Apply the transform function for post-processing
+            else if (typeof layers[t].data == 'function') {
+                tile_layers[layers[t].name] = layers[t].data(tile.layers);
+            }
+        }
+
+        // Handle cases where no data was found in tile or returned by post-processor
+        tile_layers[layers[t].name] = tile_layers[layers[t].name] || { type: 'FeatureCollection', features: [] };
     }
     tile.layers = tile_layers;
     return tile_layers;

@@ -27,7 +27,7 @@ GLRenderer.prototype._init = function GLRendererInit ()
     this.container.appendChild(this.canvas);
 
     this.gl = GL.getContext(this.canvas);
-    this.program = GL.updateProgram(this.gl, null, GLRenderer.vertex_shader_source, GLRenderer.fragment_shader_source);
+    this.gl_program = new GL.Program(this.gl, GLRenderer.vertex_shader_source, GLRenderer.fragment_shader_source);
     this.last_render_count = null;
 
     this.resizeMap(this.container.clientWidth, this.container.clientHeight);
@@ -72,6 +72,7 @@ GLRenderer.addTile = function (tile, layers, styles)
 
             // Rendering reverse order aka top to bottom
             for (var f = num_features-1; f >= 0; f--) {
+            // for (var f = 0; f < num_features; f++) {
                 feature = tile.layers[layer.name].features[f];
                 style = VectorRenderer.parseStyleForFeature(feature, styles[layer.name], tile);
                 z = GLRenderer.calculateZ(layer, tile);
@@ -173,10 +174,10 @@ GLRenderer.prototype._tileWorkerCompleted = function (tile)
     // Create GL geometry objects
     tile.gl_geometry = [];
     if (vertex_triangles.length > 0) {
-        tile.gl_geometry.push(new GLTriangles(this.gl, this.program, vertex_triangles));
+        tile.gl_geometry.push(new GLTriangles(this.gl, this.gl_program.program, vertex_triangles));
     }
     if (vertex_lines.length > 0) {
-        tile.gl_geometry.push(new GLLines(this.gl, this.program, vertex_lines, { line_width: 1 /*5 / Geo.meters_per_pixel[Math.floor(this.zoom)]*/ }));
+        tile.gl_geometry.push(new GLLines(this.gl, this.gl_program.program, vertex_lines, { line_width: 1 /*5 / Geo.meters_per_pixel[Math.floor(this.zoom)]*/ }));
     }
 
     tile.debug.geometries = tile.gl_geometry.reduce(function(sum, geom) { return sum + geom.geometry_count; }, 0);
@@ -278,32 +279,31 @@ GLRenderer.prototype._render = function GLRendererRender ()
 
     this.input();
 
-    if (!this.program) {
+    if (!this.gl_program) {
         return;
     }
-    gl.useProgram(this.program);
+    gl.useProgram(this.gl_program.program);
 
-    // Set values to this.program variables
-    gl.uniform2f(gl.getUniformLocation(this.program, 'resolution'), this.css_size.width, this.css_size.height);
-    gl.uniform1f(gl.getUniformLocation(this.program, 'time'), ((+new Date()) - this.start_time) / 1000);
+    this.gl_program.uniform('2f', 'resolution', this.css_size.width, this.css_size.height);
+    this.gl_program.uniform('1f', 'time', ((+new Date()) - this.start_time) / 1000);
 
     var center = Geo.latLngToMeters(Point(this.center.lng, this.center.lat));
-    gl.uniform2f(gl.getUniformLocation(this.program, 'map_center'), center.x, center.y);
-    gl.uniform1f(gl.getUniformLocation(this.program, 'map_zoom'), this.zoom);
-    // gl.uniform1f(gl.getUniformLocation(this.program, 'map_zoom'), Math.floor(this.zoom) + (Math.log((this.zoom % 1) + 1) / Math.LN2)); // scale fractional zoom by log
-    gl.uniform1f(gl.getUniformLocation(this.program, 'num_layers'), this.layers.length);
+    this.gl_program.uniform('2f', 'map_center', center.x, center.y);
+    this.gl_program.uniform('1f', 'map_zoom', this.zoom); // Math.floor(this.zoom) + (Math.log((this.zoom % 1) + 1) / Math.LN2 // scale fractional zoom by log
+    this.gl_program.uniform('1f', 'num_layers', this.layers.length);
 
     var meters_per_pixel = Geo.min_zoom_meters_per_pixel / Math.pow(2, this.zoom);
     var meter_zoom = Point(this.css_size.width / 2 * meters_per_pixel, this.css_size.height / 2 * meters_per_pixel);
-    gl.uniform2f(gl.getUniformLocation(this.program, 'meter_zoom'), meter_zoom.x, meter_zoom.y);
+    this.gl_program.uniform('2f', 'meter_zoom', meter_zoom.x, meter_zoom.y);
+    this.gl_program.uniform('1f', 'tile_scale', VectorRenderer.tile_scale);
 
-    // gl.uniform1f(gl.getUniformLocation(this.program, 'tile_scale'), VectorRenderer.tile_scale);
+    var compound_mat = mat4.create();
+    var model_mat = mat4.create(); // -> model matrix
+    var view_mat = mat4.create(); // -> view matrix
+    var meter_view_mat = mat4.create(); // -> view matrix
 
-    var model_view_mat = mat4.create();
-    var tile_view_mat = mat4.create();
-    var meter_view_mat = mat4.create();
     mat4.scale(meter_view_mat, meter_view_mat, vec3.fromValues(1 / meter_zoom.x, 1 / meter_zoom.y, 1 / meter_zoom.x)); // convert meters to viewport
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'meter_view_mat'), gl.FALSE, meter_view_mat);
+    // this.gl_program.uniform('Matrix4fv', 'meter_view_mat', gl.FALSE, meter_view_mat);
 
     // Perspective-style projections
     var perspective_mat = mat4.create();
@@ -341,7 +341,7 @@ GLRenderer.prototype._render = function GLRendererRender ()
     // mat4.scale(perspective_mat, perspective_mat, vec3.fromValues(1, 1, -1));
     // mat4.translate(perspective_mat, perspective_mat2, vec3.fromValues(0.25 * 20, 0.25 * 20, 0));
 
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'perspective_mat'), gl.FALSE, perspective_mat);
+    this.gl_program.uniform('Matrix4fv', 'perspective_mat', gl.FALSE, perspective_mat);
 
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -349,6 +349,13 @@ GLRenderer.prototype._render = function GLRendererRender ()
     gl.depthFunc(gl.LESS);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
+
+    // Improve precision by offsetting tile and map center coords
+    // Anchor scale defines a 'block size' that tile and center are 'reduced' to
+    var anchor_scale = 5000;
+    var anchor = { x: center.x - (center.x % anchor_scale), y: center.y - (center.y % anchor_scale) };
+    var cmin = { x: center.x - anchor.x, y: center.y - anchor.y };
+    this.gl_program.uniform('2f', 'anchor', anchor.x, anchor.y);
 
     // Render tile GL geometries
     var count = 0;
@@ -360,25 +367,40 @@ GLRenderer.prototype._render = function GLRendererRender ()
             Math.min(tile.coords.z, this.tile_source.max_zoom || tile.coords.z) == capped_zoom) {
 
             if (tile.gl_geometry != null) {
+                var tmin = { x: tile.min.x - anchor.x, y: tile.min.y - anchor.y };
+
                 // Tile transform
-                // mat4.copy(model_view_mat, meter_view_mat); // convert meters to pixels
-                mat4.identity(model_view_mat)
-                // mat4.rotateZ(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 4);
-                // mat4.rotateY(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 6);
-                // mat4.rotateX(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 6);
-                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
+                mat4.identity(model_mat)
+                // mat4.rotateZ(model_mat, model_mat, ((+new Date()) - this.start_time) / 1000 / 4);
+                // mat4.rotateY(model_mat, model_mat, ((+new Date()) - this.start_time) / 1000 / 6);
+                // mat4.rotateX(model_mat, model_mat, ((+new Date()) - this.start_time) / 1000 / 6);
+                // mat4.translate(model_mat, model_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
+                // mat4.translate(model_mat, model_mat, vec3.fromValues(tile.min.x, tile.min.y, 0));
+                mat4.translate(model_mat, model_mat, vec3.fromValues(tmin.x, tmin.y, 0));
 
-                mat4.scale(model_view_mat, model_view_mat, vec3.fromValues((tile.max.x - tile.min.x) / VectorRenderer.tile_scale, -1 * (tile.max.y - tile.min.y) / VectorRenderer.tile_scale, 1)); // scale tile local coords to meters
+                mat4.scale(model_mat, model_mat, vec3.fromValues((tile.max.x - tile.min.x) / VectorRenderer.tile_scale, -1 * (tile.max.y - tile.min.y) / VectorRenderer.tile_scale, 1)); // scale tile local coords to meters
 
-                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(-2048, -2048, 0));
-                // mat4.rotateZ(model_view_mat, model_view_mat, ((+new Date()) - this.start_time) / 1000 / 4); // + (tile.coords.x + tile.coords.y));
-                // mat4.translate(model_view_mat, model_view_mat, vec3.fromValues(2048, 2048, 0));
+                // mat4.translate(model_mat, model_mat, vec3.fromValues(-2048, -2048, 0));
+                // mat4.rotateZ(model_mat, model_mat, ((+new Date()) - this.start_time) / 1000 / 4); // + (tile.coords.x + tile.coords.y));
+                // mat4.translate(model_mat, model_mat, vec3.fromValues(2048, 2048, 0));
 
-                gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'model_view_mat'), gl.FALSE, model_view_mat);
+                this.gl_program.uniform('Matrix4fv', 'model_mat', gl.FALSE, model_mat);
 
-                mat4.identity(tile_view_mat);
-                mat4.translate(tile_view_mat, tile_view_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
-                gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'tile_view_mat'), gl.FALSE, tile_view_mat);
+                // mat4.identity(view_mat);
+                mat4.copy(view_mat, meter_view_mat); // convert meters to screen space
+                // mat4.translate(view_mat, view_mat, vec3.fromValues(tile.min.x - center.x, tile.min.y - center.y, 0)); // adjust for tile origin & map center
+                // mat4.translate(view_mat, view_mat, vec3.fromValues(-center.x, -center.y, 0));
+                mat4.translate(view_mat, view_mat, vec3.fromValues(-cmin.x, -cmin.y, 0));
+
+                // console.log("tile: " + tile.min.x + ", " + tile.min.y + ", center: " + center.x + ", " + center.y + ", sub: " + (tile.min.x - center.x) + ", " + (tile.min.y - center.y));
+                // console.log("tile: " + tmin.x + ", " + tmin.y + ", center: " + cmin.x + ", " + cmin.y + ", sub: " + (tmin.x - cmin.x) + ", " + (tmin.y - cmin.y));
+
+                this.gl_program.uniform('Matrix4fv', 'view_mat', gl.FALSE, view_mat);
+
+                // mat4.copy(compound_mat, model_mat);
+                // mat4.multiply(compound_mat, view_mat, compound_mat);
+                // mat4.multiply(compound_mat, meter_view_mat, compound_mat);
+                // this.gl_program.uniform('Matrix4fv', 'compound_mat', gl.FALSE, compound_mat);
 
                 tile.gl_geometry.forEach(function (gl_geometry) {
                     gl_geometry.render();
@@ -400,15 +422,22 @@ GLRenderer.prototype._render = function GLRendererRender ()
     return true;
 };
 
-GLRenderer.prototype.getBufferSize = function (filter)
+// Sum of a debug property across tiles
+GLRenderer.prototype.getDebugSum = function (prop, filter)
 {
     var sum = 0;
     for (var t in this.tiles) {
-        if (typeof filter != 'function' || filter(this.tiles[t]) == true) {
-            sum += this.tiles[t].debug.buffer_size;
+        if (this.tiles[t].debug[prop] != null && (typeof filter != 'function' || filter(this.tiles[t]) == true)) {
+            sum += this.tiles[t].debug[prop];
         }
     }
     return sum;
+};
+
+// Average of a debug property across tiles
+GLRenderer.prototype.getDebugAverage = function (prop, filter)
+{
+    return this.getDebugSum(prop, filter) / Object.keys(this.tiles).length;
 };
 
 // User input
@@ -432,10 +461,13 @@ GLRenderer.prototype.initInputHandlers = function GLRendererInitInputHandlers ()
         else if (event.keyCode == 40) {
             gl_renderer.key = 'down';
         }
-        // else if (event.keyCode == 82) { // r
-        //     console.log("reloading shaders");
-        //     gl_renderer.program = GL.updateProgramFromURLs(gl_renderer.gl, gl_renderer.program, this.shader_url + 'vertex.glsl', this.shader_url + 'fragment.glsl');
-        // }
+        else if (event.keyCode == 83) { // s
+            console.log("reloading shaders");
+            gl_renderer.gl_program.program = GL.updateProgramFromURLs(gl_renderer.gl, gl_renderer.gl_program.program, 'vertex.glsl', 'fragment.glsl');
+            gl_renderer.gl.useProgram(gl_renderer.gl_program.program);
+            gl_renderer.gl_program.refreshUniforms();
+            gl_renderer.dirty = true;
+        }
     });
 
     document.addEventListener('keyup', function (event) {
