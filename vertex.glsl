@@ -21,7 +21,7 @@ uniform float time;
 uniform mat4 model_mat;
 uniform mat4 view_mat;
 // uniform mat4 meter_view_mat;
-// uniform mat4 perspective_mat;
+uniform mat4 perspective_mat;
 // uniform mat4 compound_mat;
 
 uniform vec2 anchor;
@@ -115,6 +115,7 @@ void main() {
         vec2 perspective_offset = vec2(-0.25, -0.25);
         vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);
         vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset); // perspective from offset center screen
+        // vposition = perspective_mat * vposition;
     #elif defined(PROJECTION_ISOMETRIC) || defined(PROJECTION_POPUP)
         // Pop-up effect - 3d in center of viewport, fading to 2d at edges
         #if defined(PROJECTION_POPUP)
@@ -156,6 +157,7 @@ void main() {
     float z_layer_range = (num_layers + 1.) + z_layer_scale;
     float z_layer = (layer + 1.) + z_layer_scale;
 
+    // vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);
     vposition.z = z_layer + clamp(vposition.z * meter_zoom.x, 1., z_layer_scale);
     vposition.z = (z_layer_range - vposition.z) / z_layer_range;
 

@@ -23,7 +23,7 @@ GLRenderer.vertex_shader_source =
 "uniform mat4 model_mat;\n" +
 "uniform mat4 view_mat;\n" +
 "// uniform mat4 meter_view_mat;\n" +
-"// uniform mat4 perspective_mat;\n" +
+"uniform mat4 perspective_mat;\n" +
 "// uniform mat4 compound_mat;\n" +
 "\n" +
 "uniform vec2 anchor;\n" +
@@ -117,6 +117,7 @@ GLRenderer.vertex_shader_source =
 "        vec2 perspective_offset = vec2(-0.25, -0.25);\n" +
 "        vec2 perspective_factor = vec2(0.8, 0.8); // vec2(-0.25, 0.75);\n" +
 "        vposition.xy += vposition.z * perspective_factor * (vposition.xy - perspective_offset); // perspective from offset center screen\n" +
+"        // vposition = perspective_mat * vposition;\n" +
 "    #elif defined(PROJECTION_ISOMETRIC) || defined(PROJECTION_POPUP)\n" +
 "        // Pop-up effect - 3d in center of viewport, fading to 2d at edges\n" +
 "        #if defined(PROJECTION_POPUP)\n" +
@@ -158,6 +159,7 @@ GLRenderer.vertex_shader_source =
 "    float z_layer_range = (num_layers + 1.) + z_layer_scale;\n" +
 "    float z_layer = (layer + 1.) + z_layer_scale;\n" +
 "\n" +
+"    // vposition.z = z_layer + clamp(-vposition.z, 1., z_layer_scale);\n" +
 "    vposition.z = z_layer + clamp(vposition.z * meter_zoom.x, 1., z_layer_scale);\n" +
 "    vposition.z = (z_layer_range - vposition.z) / z_layer_range;\n" +
 "\n" +
