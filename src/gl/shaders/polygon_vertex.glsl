@@ -11,6 +11,8 @@ uniform mat4 u_tile_view;
 uniform mat4 u_meter_view;
 uniform float u_meters_per_pixel;
 uniform float u_num_layers;
+uniform float u_test;
+uniform float u_test2;
 
 attribute vec3 a_position;
 attribute vec3 a_normal;
@@ -85,7 +87,8 @@ void main() {
     position = u_meter_view * position; // convert meters to screen space (0-1)
 
     #if defined(PROJECTION_PERSPECTIVE)
-        position = perspective(position, vec2(-0.25, -0.25), vec2(0.6, 0.6));
+        // position = perspective(position, vec2(0., 0.), vec2(0.6, 0.6)); // vec2(-0.25, -0.25)
+        position = perspective(position, vec2(u_test, u_test2), vec2(.6, .6)); // vec2(-0.25, -0.25)
     #elif defined(PROJECTION_ISOMETRIC) // || defined(PROJECTION_POPUP)
         position = isometric(position, vec2(0., 1.), 1.);
         // position = isometric(position, vec2(sin(u_time), cos(u_time)), 1.);

@@ -144,6 +144,8 @@ shader_sources['polygon_vertex'] =
 "uniform mat4 u_meter_view;\n" +
 "uniform float u_meters_per_pixel;\n" +
 "uniform float u_num_layers;\n" +
+"uniform float u_test;\n" +
+"uniform float u_test2;\n" +
 "attribute vec3 a_position;\n" +
 "attribute vec3 a_normal;\n" +
 "attribute vec3 a_color;\n" +
@@ -252,7 +254,7 @@ shader_sources['polygon_vertex'] =
 "  #endif\n" +
 "  position = u_meter_view * position;\n" +
 "  #if defined(PROJECTION_PERSPECTIVE)\n" +
-"  position = a_x_perspective(position, vec2(-0.25, -0.25), vec2(0.6, 0.6));\n" +
+"  position = a_x_perspective(position, vec2(u_test, u_test2), vec2(.6, .6));\n" +
 "  #elif defined(PROJECTION_ISOMETRIC) // || defined(PROJECTION_POPUP)\n" +
 "  position = b_x_isometric(position, vec2(0., 1.), 1.);\n" +
 "  #endif\n" +

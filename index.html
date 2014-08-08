@@ -611,6 +611,50 @@ function initFeatureSelection () {
     });
 }
 
+function setGLProgramUniform (type, name, value) {
+    for (var m in layer.renderer.modes) {
+        layer.renderer.gl.useProgram(layer.renderer.modes[m].gl_program.program);
+        layer.renderer.modes[m].gl_program.uniform(type, name, value);
+    }
+    layer.renderer.dirty = true;
+}
+
+var mouse_monitor = function(e) {
+    var height = document.body.clientHeight;
+    var width = document.body.clientWidth;
+
+  var x = e.clientX;
+  var y = e.clientY;
+    xpos = ((x - (width / 2))/(width / 2));
+    ypos = ((y - (height / 2))/(height / 2))*-1.;
+    setGLProgramUniform('1f', 'u_test', xpos);
+    setGLProgramUniform('1f', 'u_test2', ypos);
+    console.log((x - (width / 2))/(width / 2));
+  // console.log(xpos, ypos);
+}
+
+window.onload = function() {
+  this.addEventListener('mousemove', mouse_monitor);
+}
+
+/*
+
+renderer.container.addEventListener('mousemove', function (e) {
+     var height = document.body.clientHeight;
+    var width = document.body.clientWidth;
+
+  var x = e.clientX;
+  var y = e.clientY;
+    xpos = ((x - (width / 2))/(width / 2));
+    ypos = ((y - (height / 2))/(height / 2))*-1.;
+    setGLProgramUniform('1f', 'u_test', xpos);
+    setGLProgramUniform('1f', 'u_test2', ypos);
+    // console.log((x - (width / 2))/(width / 2));
+  console.log(xpos, ypos);
+});
+
+*/
+
 
 /***** Render loop *****/
 
