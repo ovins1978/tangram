@@ -28,8 +28,9 @@
     "queue-async": "^1.0.7"
   },
   "devDependencies": {
-    "uglify-js": "^2.4.14",
     "browserify": "^4.2.0",
-    "glslify": "^1.5.1"
+    "cucumber": "^0.4.3",
+    "glslify": "^1.5.1",
+    "uglify-js": "^2.4.14"
   }
 }
